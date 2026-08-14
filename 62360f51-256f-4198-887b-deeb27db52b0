@@ -1,0 +1,45 @@
+import { TIMER_MODES, setState, type TimerModeId } from "@/game/state";
+import { sfx, unlockAudio } from "@/game/audio";
+
+export function selectTimerMode(id: TimerModeId) {
+  unlockAudio();
+  sfx.tap();
+  setState((s) => ({ ...s, timerMode: id }));
+}
+
+/** Compact selector used on menu / level screens. */
+export function TimerModeChips({ value }: { value: TimerModeId }) {
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {TIMER_MODES.map((t) => {
+        const active = t.id === value;
+        return (
+          <button
+            key={t.id}
+            type="button"
+            aria-pressed={active}
+            onClick={() => selectTimerMode(t.id)}
+            className={`min-h-16 rounded-xl border px-3 py-2 text-left transition-transform active:scale-[0.98] ${
+              active
+                ? "border-primary bg-primary/15 text-foreground bb-glow"
+                : "border-border bg-surface-2 text-foreground/90"
+            }`}
+          >
+            <span className="flex items-center gap-1.5">
+              <span aria-hidden="true">{t.icon}</span>
+              <span className="truncate font-display text-sm font-bold">
+                {t.name.replace(" Mode", "")}
+              </span>
+              {active ? (
+                <span className="ml-auto text-[10px] font-bold text-primary">✓</span>
+              ) : null}
+            </span>
+            <span className="mt-0.5 block text-[11px] leading-tight text-muted-foreground">
+              {t.seconds === null ? "No timer" : `${t.seconds}s per challenge`}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}

@@ -1,0 +1,323 @@
+import { useCallback, useEffect, useState } from "react";
+import { LEVELS_PER_MODE, MODES, type ModeId } from "./modes";
+
+export interface ModeProgress {
+  unlocked: number; // highest unlocked level
+  stars: Record<number, number>; // level -> 0..3
+  best: Record<number, number>; // level -> best score
+}
+
+export type TimerModeId = "relax" | "challenge" | "expert" | "extreme";
+
+export interface TimerMode {
+  id: TimerModeId;
+  name: string;
+  seconds: number | null; // null = no timer
+  desc: string;
+  icon: string;
+}
+
+/** Relax is the default: no countdown, think as long as you like. */
+export const TIMER_MODES: TimerMode[] = [
+  {
+    id: "relax",
+    name: "Relax Mode",
+    seconds: null,
+    desc: "No timer — think it through",
+    icon: "🧘",
+  },
+  {
+    id: "challenge",
+    name: "Challenge Mode",
+    seconds: 60,
+    desc: "60 seconds per challenge",
+    icon: "⏱️",
+  },
+  { id: "expert", name: "Expert Mode", seconds: 90, desc: "90 seconds per challenge", icon: "🎯" },
+  {
+    id: "extreme",
+    name: "Extreme Mode",
+    seconds: 120,
+    desc: "120 seconds per challenge",
+    icon: "🔥",
+  },
+];
+
+export function getTimerMode(id: string | undefined): TimerMode {
+  return TIMER_MODES.find((t) => t.id === id) ?? TIMER_MODES[0]!;
+}
+
+export interface GameState {
+  version: number;
+  xp: number;
+  coins: number;
+  lives: number;
+  livesUpdatedAt: number;
+  totalScore: number;
+  highScore: number;
+  timerMode: TimerModeId;
+  streak: number;
+  bestStreak: number;
+  lastPlayedDay: string | null;
+  gamesPlayed: number;
+  perfectLevels: number;
+  correctAnswers: number;
+  achievements: string[];
+  settings: { sound: boolean; haptics: boolean; timer: boolean; reducedMotion: boolean };
+  progress: Record<ModeId, ModeProgress>;
+}
+
+export const MAX_LIVES = 5;
+export const LIFE_REGEN_MS = 5 * 60 * 1000;
+const KEY = "brain-battle-v1";
+
+function emptyProgress(): Record<ModeId, ModeProgress> {
+  return MODES.reduce(
+    (acc, m) => {
+      acc[m.id] = { unlocked: 1, stars: {}, best: {} };
+      return acc;
+    },
+    {} as Record<ModeId, ModeProgress>,
+  );
+}
+
+export function defaultState(): GameState {
+  return {
+    version: 1,
+    xp: 0,
+    coins: 50,
+    lives: MAX_LIVES,
+    livesUpdatedAt: Date.now(),
+    totalScore: 0,
+    highScore: 0,
+    timerMode: "relax",
+    streak: 0,
+    bestStreak: 0,
+    lastPlayedDay: null,
+    gamesPlayed: 0,
+    perfectLevels: 0,
+    correctAnswers: 0,
+    achievements: [],
+    settings: { sound: true, haptics: true, timer: true, reducedMotion: false },
+    progress: emptyProgress(),
+  };
+}
+
+export function levelOf(xp: number) {
+  return Math.floor(Math.sqrt(xp / 60)) + 1;
+}
+export function xpForLevel(l: number) {
+  return (l - 1) ** 2 * 60;
+}
+
+export interface Achievement {
+  id: string;
+  name: string;
+  desc: string;
+  icon: string;
+  check: (s: GameState) => boolean;
+}
+
+export const ACHIEVEMENTS: Achievement[] = [
+  {
+    id: "first-blood",
+    name: "First Steps",
+    desc: "Complete your first level",
+    icon: "🎯",
+    check: (s) => s.gamesPlayed >= 1,
+  },
+  {
+    id: "ten-games",
+    name: "Warming Up",
+    desc: "Play 10 levels",
+    icon: "🔥",
+    check: (s) => s.gamesPlayed >= 10,
+  },
+  {
+    id: "fifty-games",
+    name: "Dedicated",
+    desc: "Play 50 levels",
+    icon: "🏅",
+    check: (s) => s.gamesPlayed >= 50,
+  },
+  {
+    id: "perfect",
+    name: "Flawless",
+    desc: "Finish a level with no mistakes",
+    icon: "💎",
+    check: (s) => s.perfectLevels >= 1,
+  },
+  {
+    id: "perfect-10",
+    name: "Perfectionist",
+    desc: "10 flawless levels",
+    icon: "👑",
+    check: (s) => s.perfectLevels >= 10,
+  },
+  {
+    id: "streak-5",
+    name: "On Fire",
+    desc: "Reach a 5 answer streak",
+    icon: "⚡",
+    check: (s) => s.bestStreak >= 5,
+  },
+  {
+    id: "streak-15",
+    name: "Unstoppable",
+    desc: "Reach a 15 answer streak",
+    icon: "🌪️",
+    check: (s) => s.bestStreak >= 15,
+  },
+  {
+    id: "coins-500",
+    name: "Coin Collector",
+    desc: "Hold 500 coins",
+    icon: "🪙",
+    check: (s) => s.coins >= 500,
+  },
+  {
+    id: "xp-2000",
+    name: "Big Brain",
+    desc: "Earn 2,000 XP",
+    icon: "🧠",
+    check: (s) => s.xp >= 2000,
+  },
+  {
+    id: "answers-200",
+    name: "Sharp Mind",
+    desc: "Answer 200 questions correctly",
+    icon: "✅",
+    check: (s) => s.correctAnswers >= 200,
+  },
+  {
+    id: "explorer",
+    name: "Explorer",
+    desc: "Clear level 1 in every mode",
+    icon: "🗺️",
+    check: (s) => MODES.every((m) => (s.progress[m.id]?.unlocked ?? 1) > 1),
+  },
+  {
+    id: "halfway",
+    name: "Halfway Hero",
+    desc: `Reach level ${Math.floor(LEVELS_PER_MODE / 2)} in any mode`,
+    icon: "🚀",
+    check: (s) => MODES.some((m) => (s.progress[m.id]?.unlocked ?? 1) >= LEVELS_PER_MODE / 2),
+  },
+  {
+    id: "master",
+    name: "Mode Master",
+    desc: "Complete all levels in one mode",
+    icon: "🏆",
+    check: (s) => MODES.some((m) => (s.progress[m.id]?.unlocked ?? 1) > LEVELS_PER_MODE),
+  },
+];
+
+function migrate(raw: unknown): GameState {
+  const base = defaultState();
+  if (!raw || typeof raw !== "object") return base;
+  const s = { ...base, ...(raw as GameState) };
+  s.settings = { ...base.settings, ...(s.settings ?? {}) };
+  s.progress = { ...base.progress, ...(s.progress ?? {}) };
+  for (const m of MODES) {
+    const p = s.progress[m.id];
+    s.progress[m.id] = {
+      unlocked: p?.unlocked ?? 1,
+      stars: p?.stars ?? {},
+      best: p?.best ?? {},
+    };
+  }
+  return s;
+}
+
+export function load(): GameState {
+  if (typeof window === "undefined") return defaultState();
+  try {
+    const raw = window.localStorage.getItem(KEY);
+    const s = migrate(raw ? JSON.parse(raw) : null);
+    return regenLives(s);
+  } catch {
+    return defaultState();
+  }
+}
+
+export function regenLives(s: GameState): GameState {
+  if (s.lives >= MAX_LIVES) return { ...s, livesUpdatedAt: Date.now() };
+  const elapsed = Date.now() - (s.livesUpdatedAt || Date.now());
+  const gained = Math.floor(elapsed / LIFE_REGEN_MS);
+  if (gained <= 0) return s;
+  const lives = Math.min(MAX_LIVES, s.lives + gained);
+  return {
+    ...s,
+    lives,
+    livesUpdatedAt: lives >= MAX_LIVES ? Date.now() : s.livesUpdatedAt + gained * LIFE_REGEN_MS,
+  };
+}
+
+export function save(s: GameState) {
+  try {
+    window.localStorage.setItem(KEY, JSON.stringify(s));
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+let memory: GameState | null = null;
+const listeners = new Set<(s: GameState) => void>();
+
+export function getState(): GameState {
+  if (!memory) memory = load();
+  return memory;
+}
+
+export function setState(updater: (s: GameState) => GameState) {
+  const next = updater(getState());
+  memory = next;
+  save(next);
+  listeners.forEach((l) => l(next));
+}
+
+export function useGameState() {
+  const [state, setLocal] = useState<GameState>(defaultState);
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    memory = load();
+    setLocal(memory);
+    setHydrated(true);
+    const l = (s: GameState) => setLocal(s);
+    listeners.add(l);
+    const t = window.setInterval(() => setState((s) => regenLives(s)), 15000);
+    return () => {
+      listeners.delete(l);
+      window.clearInterval(t);
+    };
+  }, []);
+
+  const update = useCallback((fn: (s: GameState) => GameState) => setState(fn), []);
+  return { state, update, hydrated };
+}
+
+export function todayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export function applyDailyStreak(s: GameState): GameState {
+  const today = todayKey();
+  if (s.lastPlayedDay === today) return s;
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const streak = s.lastPlayedDay === yesterday ? s.streak + 1 : 1;
+  return { ...s, streak, lastPlayedDay: today, bestStreak: Math.max(s.bestStreak, s.streak) };
+}
+
+export function unlockAchievements(s: GameState): { state: GameState; unlocked: Achievement[] } {
+  const newly = ACHIEVEMENTS.filter((a) => !s.achievements.includes(a.id) && a.check(s));
+  if (!newly.length) return { state: s, unlocked: [] };
+  return {
+    state: {
+      ...s,
+      achievements: [...s.achievements, ...newly.map((a) => a.id)],
+      coins: s.coins + newly.length * 25,
+    },
+    unlocked: newly,
+  };
+}

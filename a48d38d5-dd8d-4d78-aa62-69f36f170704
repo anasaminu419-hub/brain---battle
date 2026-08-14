@@ -1,0 +1,60 @@
+import { useEffect, useState } from "react";
+
+/**
+ * Lightweight splash: pure CSS/SVG, no images, ~2.4s then fades into the menu.
+ * Shown once per app session (sessionStorage) so navigation stays snappy.
+ */
+export function Splash({ onDone }: { onDone: () => void }) {
+  const [progress, setProgress] = useState(8);
+
+  useEffect(() => {
+    const t = window.setInterval(() => setProgress((p) => Math.min(100, p + 6)), 110);
+    const end = window.setTimeout(onDone, 2400);
+    return () => {
+      window.clearInterval(t);
+      window.clearTimeout(end);
+    };
+  }, [onDone]);
+
+  return (
+    <div className="bb-hero fixed inset-0 z-[100] grid place-items-center overflow-hidden px-6">
+      <div className="flex w-full max-w-xs flex-col items-center text-center">
+        <div className="animate-float relative grid h-28 w-28 place-items-center rounded-[2rem] border border-primary/40 bg-primary/10 bb-glow">
+          <span className="text-6xl leading-none" aria-hidden="true">
+            🧠
+          </span>
+          <span className="absolute inset-0 rounded-[2rem] border-2 border-transparent border-t-primary animate-spin-slow" />
+        </div>
+
+        <h1 className="bb-gradient-text animate-rise mt-6 font-display text-4xl font-extrabold leading-tight">
+          Brain Battle
+        </h1>
+        <p className="animate-rise mt-1 font-display text-lg font-semibold text-foreground/90">
+          Think Fast!
+        </p>
+
+        <div className="mt-8 h-2 w-full overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full rounded-full bg-primary transition-all duration-150"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+        <p className="mt-3 text-xs uppercase tracking-[0.25em] text-muted-foreground">
+          Loading offline pack…
+        </p>
+      </div>
+    </div>
+  );
+}
+
+export function useSplash() {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    const seen = window.sessionStorage.getItem("bb-splash");
+    if (!seen) {
+      setShow(true);
+      window.sessionStorage.setItem("bb-splash", "1");
+    }
+  }, []);
+  return { show, dismiss: () => setShow(false) };
+}

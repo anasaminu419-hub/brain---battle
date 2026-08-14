@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Packages the complete Brain Battle: Think Fast! source into public/brain-battle-source.zip
+# so the in-app "Download Project Source" button always serves a buildable project.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+OUT="public/brain-battle-source.zip"
+rm -f "$OUT"
+
+zip -r -q "$OUT" . \
+  -x "node_modules/*" \
+  -x ".git" -x ".git/*" \
+  -x "dist/*" \
+  -x ".output/*" \
+  -x ".nitro/*" \
+  -x ".vinxi/*" \
+  -x ".workspace/*" \
+  -x "tsconfig.tsbuildinfo" \
+  -x "public/brain-battle-source.zip"
+
+echo "Wrote $OUT ($(du -h "$OUT" | cut -f1))"

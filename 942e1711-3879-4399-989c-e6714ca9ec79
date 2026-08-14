@@ -1,0 +1,13 @@
+import type { CapacitorConfig } from '@capacitor/cli';
+
+const config: CapacitorConfig = {
+  appId: 'com.anasaminu.brainbattle',
+  appName: 'Brain Battle: Think Fast!',
+  webDir: '.output/public',
+  bundledWebRuntime: false,
+  android: {
+    allowMixedContent: false,
+  },
+};
+
+export default config;

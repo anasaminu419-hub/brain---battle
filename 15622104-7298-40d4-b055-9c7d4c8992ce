@@ -1,0 +1,105 @@
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { Play, Lock } from "lucide-react";
+import { LEVELS_PER_MODE, MODES } from "@/game/modes";
+import { getTimerMode, useGameState } from "@/game/state";
+import { PageHeader, Shell } from "@/components/game/Chrome";
+import { TimerModeChips } from "@/components/game/TimerModePicker";
+
+export const Route = createFileRoute("/modes")({
+  head: () => ({
+    meta: [
+      { title: "Game Modes — Brain Battle: Think Fast!" },
+      {
+        name: "description",
+        content:
+          "Pick from 7 offline brain-training modes and choose Relax, Challenge, Expert or Extreme timing before you play.",
+      },
+      { property: "og:title", content: "Game Modes — Brain Battle" },
+      {
+        property: "og:description",
+        content: "7 modes, 24 levels each, and four timing options including no-timer Relax Mode.",
+      },
+    ],
+  }),
+  component: ModesPage,
+});
+
+const ACCENT_CLASS: Record<string, string> = {
+  one: "text-mode-one border-mode-one/40 bg-mode-one/10",
+  two: "text-mode-two border-mode-two/40 bg-mode-two/10",
+  three: "text-mode-three border-mode-three/40 bg-mode-three/10",
+  four: "text-mode-four border-mode-four/40 bg-mode-four/10",
+  five: "text-mode-five border-mode-five/40 bg-mode-five/10",
+  six: "text-mode-six border-mode-six/40 bg-mode-six/10",
+  seven: "text-mode-seven border-mode-seven/40 bg-mode-seven/10",
+};
+
+function ModesPage() {
+  const { state } = useGameState();
+  const timer = getTimerMode(state.timerMode);
+
+  return (
+    <Shell>
+      <PageHeader title="Game Modes" subtitle={`Timing: ${timer.name}`} />
+
+      <section className="bb-card p-4">
+        <h2 className="mb-1 font-display text-sm font-bold uppercase tracking-widest text-muted-foreground">
+          Choose your timing
+        </h2>
+        <p className="mb-3 text-xs text-muted-foreground">
+          Relax Mode has no countdown at all. Timed modes give you one clock for the whole
+          challenge.
+        </p>
+        <TimerModeChips value={state.timerMode} />
+      </section>
+
+      <h2 className="mt-6 mb-3 font-display text-sm font-bold uppercase tracking-widest text-muted-foreground">
+        Choose a mode
+      </h2>
+
+      <div className="grid gap-3 landscape:grid-cols-2">
+        {MODES.map((m) => {
+          const p = state.progress[m.id];
+          const cleared = Math.min(LEVELS_PER_MODE, (p?.unlocked ?? 1) - 1);
+          const pct = Math.round((cleared / LEVELS_PER_MODE) * 100);
+          return (
+            <Link
+              key={m.id}
+              to="/play/$mode"
+              params={{ mode: m.id }}
+              className="bb-card group flex items-center gap-4 p-4 transition-transform active:scale-[0.98]"
+            >
+              <span
+                className={`grid h-14 w-14 shrink-0 place-items-center rounded-2xl border font-display text-lg font-bold ${ACCENT_CLASS[m.accent]}`}
+              >
+                {m.icon}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-2">
+                  <span className="truncate font-display text-base font-bold">{m.name}</span>
+                </span>
+                <span className="block truncate text-xs text-muted-foreground">{m.tagline}</span>
+                <span className="mt-2 flex items-center gap-2">
+                  <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+                    <span
+                      className="block h-full rounded-full bg-primary transition-all"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </span>
+                  <span className="shrink-0 text-[11px] font-semibold text-muted-foreground">
+                    {cleared}/{LEVELS_PER_MODE}
+                  </span>
+                </span>
+              </span>
+              <Play className="h-5 w-5 shrink-0 text-primary" />
+            </Link>
+          );
+        })}
+      </div>
+
+      <p className="mt-6 flex items-center justify-center gap-1 text-center text-xs text-muted-foreground">
+        <Lock className="h-3 w-3" /> Fully offline · progress saved on this device
+      </p>
+    </Shell>
+  );
+}

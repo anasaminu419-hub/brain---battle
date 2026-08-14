@@ -1,0 +1,21 @@
+# Brain Battle: Think Fast! — Android build
+
+App ID: `com.anasaminu.brainbattle`
+
+The project is configured for Capacitor and an Android build workflow.
+
+## Local build
+
+1. Install Node.js 22, Android Studio/SDK, and Java 17+.
+2. Run `npm install`.
+3. Run `npm run android:add` (first time only).
+4. Run `npm run android:build`.
+5. APK output: `android/app/build/outputs/apk/debug/app-debug.apk`.
+
+## GitHub build
+
+Push this project to GitHub and run **Actions → Build Brain Battle APK**. The workflow uploads the debug APK as an artifact.
+
+## Important
+
+The game itself remains offline-first. AdMob should be added only after the Android build is verified. Do not add GPS, camera, microphone, contacts, or location permissions unless a future feature explicitly requires them.

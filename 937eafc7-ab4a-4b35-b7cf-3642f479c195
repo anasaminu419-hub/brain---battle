@@ -1,0 +1,91 @@
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { Medal, Star } from "lucide-react";
+import { LEVELS_PER_MODE, MODES } from "@/game/modes";
+import { levelOf, useGameState } from "@/game/state";
+import { PageHeader, Shell } from "@/components/game/Chrome";
+
+export const Route = createFileRoute("/leaderboard")({
+  head: () => ({
+    meta: [
+      { title: "High Scores — Brain Battle: Think Fast!" },
+      {
+        name: "description",
+        content:
+          "Your personal offline leaderboard: best score, stars and top level in every brain-training mode.",
+      },
+      { property: "og:title", content: "High Scores — Brain Battle" },
+      {
+        property: "og:description",
+        content: "Track your best runs per mode. Stored on your device, no account needed.",
+      },
+    ],
+  }),
+  component: LeaderboardPage,
+});
+
+function LeaderboardPage() {
+  const { state } = useGameState();
+
+  const rows = MODES.map((m) => {
+    const p = state.progress[m.id];
+    const best = Math.max(0, ...Object.values(p?.best ?? {}), 0);
+    const stars = Object.values(p?.stars ?? {}).reduce((a, b) => a + b, 0);
+    const cleared = Math.min(LEVELS_PER_MODE, (p?.unlocked ?? 1) - 1);
+    return { m, best, stars, cleared };
+  }).sort((a, b) => b.best - a.best);
+
+  return (
+    <Shell>
+      <PageHeader title="High Scores" subtitle="Your personal offline leaderboard" />
+
+      <div className="bb-card mb-4 grid grid-cols-3 gap-2 p-4 text-center">
+        <Cell label="Best level score" value={state.highScore.toLocaleString()} />
+        <Cell label="Lifetime points" value={state.totalScore.toLocaleString()} />
+        <Cell label="Player level" value={levelOf(state.xp)} />
+      </div>
+
+      <div className="grid gap-2">
+        {rows.map((r, i) => (
+          <Link
+            key={r.m.id}
+            to="/play/$mode"
+            params={{ mode: r.m.id }}
+            className="bb-card flex items-center gap-3 p-3 transition-transform active:scale-[0.99]"
+          >
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-secondary font-display text-sm font-bold">
+              {i < 3 ? (
+                <Medal className={`h-4 w-4 ${i === 0 ? "text-accent" : "text-muted-foreground"}`} />
+              ) : (
+                i + 1
+              )}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-display text-sm font-bold">{r.m.name}</span>
+              <span className="block truncate text-[11px] text-muted-foreground">
+                {r.cleared}/{LEVELS_PER_MODE} levels cleared
+              </span>
+            </span>
+            <span className="shrink-0 text-right">
+              <span className="block font-display text-base font-bold">
+                {r.best.toLocaleString()}
+              </span>
+              <span className="flex items-center justify-end gap-1 text-[11px] text-muted-foreground">
+                <Star className="h-3 w-3 fill-accent text-accent" />
+                {r.stars}
+              </span>
+            </span>
+          </Link>
+        ))}
+      </div>
+    </Shell>
+  );
+}
+
+function Cell({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="min-w-0">
+      <div className="truncate font-display text-lg font-bold">{value}</div>
+      <div className="text-[11px] leading-tight text-muted-foreground">{label}</div>
+    </div>
+  );
+}

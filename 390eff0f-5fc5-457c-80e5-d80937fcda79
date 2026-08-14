@@ -1,0 +1,95 @@
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { Star, Lock } from "lucide-react";
+import { LEVELS_PER_MODE, getMode, levelDifficulty } from "@/game/modes";
+import { getTimerMode, useGameState } from "@/game/state";
+import { PageHeader, Shell } from "@/components/game/Chrome";
+
+export const Route = createFileRoute("/play/$mode/")({
+  head: ({ params }) => {
+    const m = getMode(params.mode);
+    const title = `${m?.name ?? "Play"} — Brain Battle: Think Fast!`;
+    const desc = `${m?.tagline ?? "Pick a level"} · ${LEVELS_PER_MODE} offline levels with progressive difficulty.`;
+    return {
+      meta: [
+        { title },
+        { name: "description", content: desc },
+        { property: "og:title", content: title },
+        { property: "og:description", content: desc },
+      ],
+    };
+  },
+  component: LevelSelect,
+});
+
+function LevelSelect() {
+  const { mode } = Route.useParams();
+  const meta = getMode(mode);
+  const { state } = useGameState();
+  const progress = state.progress[mode as never] as
+    { unlocked: number; stars: Record<number, number>; best: Record<number, number> } | undefined;
+  const unlocked = progress?.unlocked ?? 1;
+
+  if (!meta) {
+    return (
+      <Shell>
+        <PageHeader title="Unknown mode" />
+        <p className="text-sm text-muted-foreground">That game mode does not exist.</p>
+      </Shell>
+    );
+  }
+
+  const totalStars = Object.values(progress?.stars ?? {}).reduce((a, b) => a + b, 0);
+
+  return (
+    <Shell>
+      <PageHeader
+        title={meta.name}
+        back="/modes"
+        subtitle={`${meta.tagline} · ${getTimerMode(state.timerMode).name}`}
+        right={
+          <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2.5 py-1 text-xs font-semibold">
+            <Star className="h-3.5 w-3.5 fill-accent text-accent" />
+            {totalStars}/{LEVELS_PER_MODE * 3}
+          </span>
+        }
+      />
+
+      <div className="grid grid-cols-4 gap-3 sm:grid-cols-5 landscape:grid-cols-8">
+        {Array.from({ length: LEVELS_PER_MODE }, (_, i) => i + 1).map((lvl) => {
+          const isLocked = lvl > unlocked;
+          const stars = progress?.stars?.[lvl] ?? 0;
+          return (
+            <Link
+              key={lvl}
+              to="/play/$mode/$level"
+              params={{ mode, level: String(lvl) }}
+              aria-disabled={isLocked || undefined}
+              className={`bb-card flex aspect-square flex-col items-center justify-center gap-1 p-2 transition-transform active:scale-95 ${
+                isLocked ? "pointer-events-none opacity-40" : stars > 0 ? "border-primary/40" : ""
+              }`}
+            >
+              {isLocked ? (
+                <Lock className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <span className="font-display text-lg font-bold">{lvl}</span>
+              )}
+              <span className="flex gap-0.5">
+                {[1, 2, 3].map((s) => (
+                  <Star
+                    key={s}
+                    className={`h-2.5 w-2.5 ${s <= stars ? "fill-accent text-accent" : "text-muted-foreground/40"}`}
+                  />
+                ))}
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+
+      <div className="bb-card mt-5 p-4 text-xs text-muted-foreground">
+        Difficulty ramps up: levels 1-6 {levelDifficulty(1)}, 7-12 {levelDifficulty(7)}, 13-18{" "}
+        {levelDifficulty(13)}, 19-24 {levelDifficulty(19)}. Clear a level to unlock the next one.
+      </div>
+    </Shell>
+  );
+}

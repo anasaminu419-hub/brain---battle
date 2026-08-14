@@ -1,0 +1,123 @@
+// Fully offline sound effects generated with the Web Audio API.
+// No external files, no network, tiny footprint — ideal for low-end Android.
+
+let ctx: AudioContext | null = null;
+let enabled = true;
+let unlocked = false;
+
+function getCtx(): AudioContext | null {
+  if (typeof window === "undefined") return null;
+  if (!ctx) {
+    const Ctor =
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctor) return null;
+    try {
+      ctx = new Ctor();
+    } catch {
+      return null;
+    }
+  }
+  return ctx;
+}
+
+/** Call from a real user gesture so Android/Chrome allow audio. */
+export function unlockAudio() {
+  const c = getCtx();
+  if (!c) return;
+  if (c.state === "suspended") void c.resume();
+  unlocked = true;
+}
+
+export function setSoundEnabled(on: boolean) {
+  enabled = on;
+  if (on) unlockAudio();
+}
+
+function tone(
+  freq: number,
+  start: number,
+  dur: number,
+  type: OscillatorType = "sine",
+  gain = 0.18,
+  slideTo?: number,
+) {
+  const c = getCtx();
+  if (!c) return;
+  const t0 = c.currentTime + start;
+  const osc = c.createOscillator();
+  const g = c.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, t0);
+  if (slideTo) osc.frequency.exponentialRampToValueAtTime(Math.max(40, slideTo), t0 + dur);
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(gain, t0 + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  osc.connect(g).connect(c.destination);
+  osc.start(t0);
+  osc.stop(t0 + dur + 0.03);
+}
+
+/** Short filtered noise burst — used to fake hand claps / applause. */
+function clap(start: number, gain = 0.25) {
+  const c = getCtx();
+  if (!c) return;
+  const len = Math.floor(c.sampleRate * 0.12);
+  const buf = c.createBuffer(1, len, c.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) {
+    data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
+  }
+  const src = c.createBufferSource();
+  src.buffer = buf;
+  const bp = c.createBiquadFilter();
+  bp.type = "bandpass";
+  bp.frequency.value = 1600;
+  bp.Q.value = 1.1;
+  const g = c.createGain();
+  g.gain.value = gain;
+  src.connect(bp).connect(g).connect(c.destination);
+  src.start(c.currentTime + start);
+}
+
+function canPlay() {
+  return enabled && unlocked && !!getCtx();
+}
+
+export const sfx = {
+  tap() {
+    if (!canPlay()) return;
+    tone(520, 0, 0.05, "triangle", 0.08);
+  },
+  /** Cheerful chime + short applause burst. */
+  correct() {
+    if (!canPlay()) return;
+    tone(660, 0, 0.1, "triangle", 0.16);
+    tone(880, 0.08, 0.12, "triangle", 0.16);
+    tone(1320, 0.17, 0.18, "sine", 0.12);
+    for (let i = 0; i < 7; i++) clap(0.05 + i * 0.045 + Math.random() * 0.02, 0.14);
+  },
+  /** Funny "ohhh nooo" descending slide. */
+  wrong() {
+    if (!canPlay()) return;
+    tone(320, 0, 0.42, "sawtooth", 0.13, 120);
+    tone(240, 0.06, 0.4, "square", 0.06, 90);
+  },
+  gameOver() {
+    if (!canPlay()) return;
+    tone(392, 0, 0.22, "square", 0.13);
+    tone(311, 0.2, 0.24, "square", 0.13);
+    tone(262, 0.42, 0.3, "square", 0.13);
+    tone(196, 0.68, 0.7, "sawtooth", 0.12, 80);
+  },
+  levelUp() {
+    if (!canPlay()) return;
+    [523, 659, 784, 1047].forEach((f, i) => tone(f, i * 0.09, 0.16, "triangle", 0.15));
+    for (let i = 0; i < 10; i++) clap(0.1 + i * 0.05, 0.12);
+  },
+  coin() {
+    if (!canPlay()) return;
+    tone(988, 0, 0.06, "square", 0.1);
+    tone(1319, 0.06, 0.12, "square", 0.1);
+  },
+};

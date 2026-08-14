@@ -1,0 +1,522 @@
+import { hashSeed, makeRng, pick, randInt, shuffle, type Rng } from "./rng";
+
+export type ModeId =
+  | "number-sequence"
+  | "pattern"
+  | "memory"
+  | "quick-math"
+  | "odd-one-out"
+  | "word-scramble"
+  | "logic";
+
+export type Question =
+  | {
+      kind: "choice";
+      prompt: string;
+      hint?: string | undefined;
+      big?: boolean | undefined;
+      options: string[];
+      answer: number;
+    }
+  | { kind: "memory"; prompt: string; size: number; cells: number[] }
+  | {
+      kind: "scramble";
+      prompt: string;
+      hint?: string | undefined;
+      letters: string[];
+      answer: string;
+    };
+
+export interface ModeMeta {
+  id: ModeId;
+  name: string;
+  tagline: string;
+  icon: string;
+  accent: string; // css var name suffix
+}
+
+export const MODES: ModeMeta[] = [
+  {
+    id: "number-sequence",
+    name: "Number Sequence",
+    tagline: "Find the missing number",
+    icon: "123",
+    accent: "one",
+  },
+  {
+    id: "pattern",
+    name: "Pattern Challenge",
+    tagline: "Continue the pattern",
+    icon: "◆◇",
+    accent: "two",
+  },
+  {
+    id: "memory",
+    name: "Memory Challenge",
+    tagline: "Recall the lit tiles",
+    icon: "▦",
+    accent: "three",
+  },
+  { id: "quick-math", name: "Quick Math", tagline: "Beat the clock", icon: "＋", accent: "four" },
+  {
+    id: "odd-one-out",
+    name: "Odd One Out",
+    tagline: "Spot the intruder",
+    icon: "⊘",
+    accent: "five",
+  },
+  {
+    id: "word-scramble",
+    name: "Word Scramble",
+    tagline: "Unscramble the word",
+    icon: "Aa",
+    accent: "six",
+  },
+  { id: "logic", name: "Logic Puzzles", tagline: "Reason it out", icon: "⚖", accent: "seven" },
+];
+
+export const LEVELS_PER_MODE = 24;
+export const QUESTIONS_PER_LEVEL = 8;
+
+export function getMode(id: string): ModeMeta | undefined {
+  return MODES.find((m) => m.id === id);
+}
+
+export function levelTime(level: number) {
+  // seconds per question, tightens with level
+  return Math.max(6, 18 - Math.floor(level / 3));
+}
+
+export function levelDifficulty(level: number) {
+  if (level <= 6) return "Easy";
+  if (level <= 12) return "Medium";
+  if (level <= 18) return "Hard";
+  return "Expert";
+}
+
+/* ---------------- helpers ---------------- */
+
+function choice(
+  prompt: string,
+  correct: string,
+  distractors: string[],
+  rng: Rng,
+  extra?: Partial<Extract<Question, { kind: "choice" }>>,
+): Question {
+  const uniq = Array.from(new Set(distractors.filter((d) => d !== correct))).slice(0, 3);
+  let i = 1;
+  while (uniq.length < 3) {
+    const candidate = `${correct}${"'".repeat(i)}`;
+    if (!uniq.includes(candidate)) uniq.push(candidate);
+    i++;
+  }
+  const options = shuffle(rng, [correct, ...uniq]);
+  return { kind: "choice", prompt, options, answer: options.indexOf(correct), ...extra };
+}
+
+const numNear = (rng: Rng, n: number, spread = 6) => {
+  const out: string[] = [];
+  let guard = 0;
+  while (out.length < 6 && guard++ < 50) {
+    const d = randInt(rng, -spread, spread);
+    const v = n + d;
+    if (d !== 0 && v > -50 && !out.includes(String(v))) out.push(String(v));
+  }
+  return out;
+};
+
+/* ---------------- generators ---------------- */
+
+function genNumberSequence(rng: Rng, level: number): Question {
+  const tier = Math.ceil(level / 6);
+  const type =
+    tier === 1
+      ? pick(rng, ["arith", "arith", "geo"])
+      : pick(rng, ["arith", "geo", "square", "fib", "alt"]);
+  const len = 5 + Math.min(2, Math.floor(level / 10));
+  let seq: number[] = [];
+  if (type === "arith") {
+    const start = randInt(rng, 1, 20 + level);
+    const step = randInt(rng, 2, 3 + level);
+    seq = Array.from({ length: len }, (_, i) => start + i * step);
+  } else if (type === "geo") {
+    const start = randInt(rng, 1, 5);
+    const r = randInt(rng, 2, tier > 2 ? 4 : 3);
+    seq = Array.from({ length: Math.min(len, 6) }, (_, i) => start * r ** i);
+  } else if (type === "square") {
+    const start = randInt(rng, 1, 6);
+    seq = Array.from({ length: len }, (_, i) => (start + i) ** 2);
+  } else if (type === "fib") {
+    let a = randInt(rng, 1, 5);
+    let b = a + randInt(rng, 1, 5);
+    seq = [a, b];
+    for (let i = 2; i < len; i++) {
+      const c = a + b;
+      seq.push(c);
+      a = b;
+      b = c;
+    }
+  } else {
+    const start = randInt(rng, 3, 20);
+    const up = randInt(rng, 3, 9);
+    const down = randInt(rng, 1, 4);
+    seq = [start];
+    for (let i = 1; i < len; i++) seq.push(seq[i - 1]! + (i % 2 ? up : -down));
+  }
+  const hideIdx = level > 8 && rng() > 0.55 ? randInt(rng, 1, seq.length - 2) : seq.length - 1;
+  const correct = seq[hideIdx]!;
+  const shown = seq.map((v, i) => (i === hideIdx ? "?" : String(v))).join("   ");
+  return choice(
+    shown,
+    String(correct),
+    numNear(rng, correct, Math.max(4, Math.round(Math.abs(correct) * 0.25))),
+    rng,
+    {
+      hint: "What replaces the ?",
+      big: true,
+    },
+  );
+}
+
+const SHAPES = ["🔴", "🔷", "🟩", "🔶", "🟣", "⭐", "⬛", "🔺"];
+
+function genPattern(rng: Rng, level: number): Question {
+  const paletteSize = Math.min(SHAPES.length, 3 + Math.floor(level / 5));
+  const palette = shuffle(rng, SHAPES).slice(0, paletteSize);
+  const cycle = randInt(rng, 2, Math.min(4, 2 + Math.floor(level / 6)));
+  const base = Array.from({ length: cycle }, (_, i) => palette[i % palette.length]!);
+  const len = 6 + Math.min(4, Math.floor(level / 4));
+  const seq: string[] = [];
+  const growing = level > 10 && rng() > 0.6;
+  if (growing) {
+    // e.g. A AB ABC pattern expressed as repeated runs of increasing length
+    let n = 1;
+    while (seq.length < len) {
+      const s = palette[seq.length % palette.length]!;
+      for (let i = 0; i < n && seq.length < len; i++) seq.push(s);
+      n++;
+    }
+  } else {
+    for (let i = 0; i < len; i++) seq.push(base[i % cycle]!);
+  }
+  const correct = growing ? seq[len - 1]! : base[len % cycle]!;
+  const shown = (growing ? seq.slice(0, len - 1) : seq).join(" ") + "  ?";
+  return choice(
+    shown,
+    correct,
+    shuffle(
+      rng,
+      palette.filter((p) => p !== correct),
+    ),
+    rng,
+    {
+      hint: "Which shape comes next?",
+      big: true,
+    },
+  );
+}
+
+function genMemory(rng: Rng, level: number): Question {
+  const size = level <= 6 ? 3 : level <= 14 ? 4 : 5;
+  const count = Math.min(size * size - 2, 3 + Math.floor(level / 3));
+  const all = shuffle(
+    rng,
+    Array.from({ length: size * size }, (_, i) => i),
+  );
+  return {
+    kind: "memory",
+    prompt: `Memorise ${count} tiles`,
+    size,
+    cells: all.slice(0, count).sort((a, b) => a - b),
+  };
+}
+
+function genQuickMath(rng: Rng, level: number): Question {
+  const tier = Math.ceil(level / 6);
+  const ops = tier === 1 ? ["+", "-"] : tier === 2 ? ["+", "-", "×"] : ["+", "-", "×", "÷"];
+  const op = pick(rng, ops);
+  let a: number, b: number, correct: number, prompt: string;
+  if (op === "+") {
+    a = randInt(rng, 5, 20 + level * 4);
+    b = randInt(rng, 5, 20 + level * 4);
+    correct = a + b;
+  } else if (op === "-") {
+    a = randInt(rng, 10, 30 + level * 4);
+    b = randInt(rng, 3, a - 1);
+    correct = a - b;
+  } else if (op === "×") {
+    a = randInt(rng, 2, 5 + level);
+    b = randInt(rng, 2, 4 + Math.floor(level / 2));
+    correct = a * b;
+  } else {
+    b = randInt(rng, 2, 4 + Math.floor(level / 3));
+    correct = randInt(rng, 2, 9 + level);
+    a = b * correct;
+  }
+  prompt = `${a} ${op} ${b} = ?`;
+  if (tier >= 4 && rng() > 0.5) {
+    const c = randInt(rng, 2, 9);
+    correct = correct + c;
+    prompt = `(${a} ${op} ${b}) + ${c} = ?`;
+  }
+  return choice(
+    prompt,
+    String(correct),
+    numNear(rng, correct, Math.max(3, Math.round(correct * 0.2))),
+    rng,
+    {
+      big: true,
+    },
+  );
+}
+
+const ODD_GROUPS: { theme: string; items: string[]; odd: string }[] = [
+  { theme: "Animals", items: ["Lion", "Tiger", "Leopard", "Cheetah"], odd: "Table" },
+  { theme: "Fruits", items: ["Mango", "Banana", "Orange", "Apple"], odd: "Carrot" },
+  { theme: "Colours", items: ["Crimson", "Scarlet", "Ruby", "Maroon"], odd: "Cello" },
+  { theme: "Planets", items: ["Mars", "Venus", "Jupiter", "Saturn"], odd: "Sirius" },
+  { theme: "Instruments", items: ["Violin", "Cello", "Guitar", "Harp"], odd: "Trumpet" },
+  { theme: "Metals", items: ["Iron", "Copper", "Zinc", "Nickel"], odd: "Oxygen" },
+  { theme: "Vehicles", items: ["Bus", "Truck", "Van", "Tram"], odd: "Canoe" },
+  { theme: "Birds", items: ["Eagle", "Falcon", "Hawk", "Kite"], odd: "Bat" },
+  { theme: "Shapes", items: ["Square", "Rhombus", "Trapezoid", "Rectangle"], odd: "Circle" },
+  { theme: "Sports", items: ["Tennis", "Squash", "Badminton", "Ping-pong"], odd: "Boxing" },
+  { theme: "Continents", items: ["Africa", "Asia", "Europe", "Australia"], odd: "Egypt" },
+  { theme: "Weather", items: ["Rain", "Hail", "Snow", "Sleet"], odd: "Wind" },
+  { theme: "Body", items: ["Heart", "Liver", "Kidney", "Lung"], odd: "Femur" },
+  { theme: "Furniture", items: ["Chair", "Sofa", "Stool", "Bench"], odd: "Lamp" },
+  { theme: "Languages", items: ["Hausa", "Yoruba", "Igbo", "Swahili"], odd: "Lagos" },
+  { theme: "Tools", items: ["Hammer", "Wrench", "Pliers", "Screwdriver"], odd: "Ladder" },
+];
+
+function genOddOneOut(rng: Rng, level: number): Question {
+  if (level > 8 && rng() > 0.45) {
+    // numeric odd-one-out
+    const kind = pick(rng, ["even", "prime", "square", "multiple"]);
+    const primes = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37];
+    let group: number[] = [];
+    let odd = 0;
+    if (kind === "even") {
+      group = shuffle(
+        rng,
+        Array.from({ length: 40 }, (_, i) => (i + 1) * 2),
+      ).slice(0, 3);
+      odd = randInt(rng, 1, 40) * 2 + 1;
+    } else if (kind === "prime") {
+      group = shuffle(rng, primes).slice(0, 3);
+      odd = pick(rng, [9, 15, 21, 25, 27, 33, 35, 49]);
+    } else if (kind === "square") {
+      group = shuffle(rng, [4, 9, 16, 25, 36, 49, 64, 81, 100]).slice(0, 3);
+      odd = pick(rng, [10, 20, 30, 50, 63, 72, 90]);
+    } else {
+      const m = randInt(rng, 3, 9);
+      group = shuffle(
+        rng,
+        Array.from({ length: 12 }, (_, i) => m * (i + 2)),
+      ).slice(0, 3);
+      odd = m * randInt(rng, 2, 12) + randInt(rng, 1, m - 1);
+    }
+    return choice("Which number does not belong?", String(odd), group.map(String), rng, {
+      big: true,
+    });
+  }
+  const g = pick(rng, ODD_GROUPS);
+  const items = shuffle(rng, g.items).slice(0, 3);
+  return choice("Which one does not belong?", g.odd, items, rng);
+}
+
+const WORDS: { w: string; hint: string }[] = [
+  { w: "BRAIN", hint: "Thinking organ" },
+  { w: "LOGIC", hint: "Sound reasoning" },
+  { w: "PUZZLE", hint: "Problem to solve" },
+  { w: "MEMORY", hint: "Power of recall" },
+  { w: "NUMBER", hint: "Used to count" },
+  { w: "PLANET", hint: "Orbits a star" },
+  { w: "GARDEN", hint: "Where plants grow" },
+  { w: "SILVER", hint: "Shiny metal" },
+  { w: "ROCKET", hint: "Goes to space" },
+  { w: "CASTLE", hint: "Royal fortress" },
+  { w: "MARKET", hint: "Place to trade" },
+  { w: "ISLAND", hint: "Land in water" },
+  { w: "CANDLE", hint: "Wax light" },
+  { w: "JUNGLE", hint: "Dense forest" },
+  { w: "WINTER", hint: "Cold season" },
+  { w: "GUITAR", hint: "Six strings" },
+  { w: "MIRROR", hint: "Shows reflection" },
+  { w: "BRIDGE", hint: "Crosses a river" },
+  { w: "PENCIL", hint: "Writing tool" },
+  { w: "DOCTOR", hint: "Treats patients" },
+  { w: "ANCHOR", hint: "Holds a ship" },
+  { w: "FALCON", hint: "Swift bird" },
+  { w: "TUNNEL", hint: "Passage underground" },
+  { w: "VOLCANO", hint: "Erupts lava" },
+  { w: "DIAMOND", hint: "Hard gemstone" },
+  { w: "JOURNEY", hint: "A long trip" },
+  { w: "LIBRARY", hint: "Books live here" },
+  { w: "MACHINE", hint: "Does work" },
+  { w: "HARVEST", hint: "Gathering crops" },
+  { w: "COMPASS", hint: "Points north" },
+  { w: "PYRAMID", hint: "Ancient tomb" },
+  { w: "CAPTAIN", hint: "Leads a team" },
+  { w: "ELEPHANT", hint: "Has a trunk" },
+  { w: "TRIANGLE", hint: "Three sides" },
+  { w: "UMBRELLA", hint: "Blocks rain" },
+  { w: "MOUNTAIN", hint: "Very high land" },
+  { w: "SANDWICH", hint: "Quick meal" },
+  { w: "AIRPLANE", hint: "Flies people" },
+  { w: "KEYBOARD", hint: "For typing" },
+  { w: "TREASURE", hint: "Buried riches" },
+  { w: "CHAMPION", hint: "The winner" },
+  { w: "DINOSAUR", hint: "Ancient reptile" },
+  { w: "ADVENTURE", hint: "Exciting trip" },
+  { w: "CHOCOLATE", hint: "Sweet treat" },
+  { w: "ORCHESTRA", hint: "Many musicians" },
+  { w: "TELESCOPE", hint: "See far stars" },
+  { w: "WATERFALL", hint: "Falling river" },
+  { w: "BUTTERFLY", hint: "Winged insect" },
+];
+
+function genScramble(rng: Rng, level: number): Question {
+  const minLen = level <= 6 ? 5 : level <= 12 ? 6 : level <= 18 ? 7 : 8;
+  const pool = WORDS.filter((w) => w.w.length >= minLen && w.w.length <= minLen + 1);
+  const item = pick(rng, pool.length ? pool : WORDS);
+  let letters = shuffle(rng, item.w.split(""));
+  if (letters.join("") === item.w) letters = letters.reverse();
+  return {
+    kind: "scramble",
+    prompt: "Unscramble the word",
+    hint: level <= 12 ? item.hint : undefined,
+    letters,
+    answer: item.w,
+  };
+}
+
+const LOGIC_BANK: { q: string; a: string; d: string[] }[] = [
+  {
+    q: "All roses are flowers. Some flowers fade quickly. Therefore:",
+    a: "Some roses may fade quickly",
+    d: ["All roses fade quickly", "No roses fade", "Roses are not flowers"],
+  },
+  {
+    q: "If it rains, the match is cancelled. The match went ahead. So:",
+    a: "It did not rain",
+    d: ["It rained", "The match was cancelled", "Nothing can be said"],
+  },
+  {
+    q: "Ada is taller than Bem. Bem is taller than Chi. Who is shortest?",
+    a: "Chi",
+    d: ["Ada", "Bem", "Cannot tell"],
+  },
+  {
+    q: "A clock shows 3:15. What is the angle between the hands?",
+    a: "7.5°",
+    d: ["0°", "90°", "45°"],
+  },
+  {
+    q: "5 machines make 5 items in 5 minutes. How long for 100 machines to make 100 items?",
+    a: "5 minutes",
+    d: ["100 minutes", "20 minutes", "1 minute"],
+  },
+  {
+    q: "Which day comes two days after the day before Friday?",
+    a: "Saturday",
+    d: ["Friday", "Sunday", "Thursday"],
+  },
+  {
+    q: "A bat and ball cost ₦1,100. The bat costs ₦1,000 more. The ball costs:",
+    a: "₦50",
+    d: ["₦100", "₦10", "₦110"],
+  },
+  {
+    q: "If all Zibs are Zabs and no Zabs are Zops, then:",
+    a: "No Zibs are Zops",
+    d: ["Some Zibs are Zops", "All Zops are Zibs", "Nothing follows"],
+  },
+  { q: "Book is to Reading as Fork is to:", a: "Eating", d: ["Cooking", "Kitchen", "Metal"] },
+  {
+    q: "A farmer has 17 sheep; all but 9 run away. How many are left?",
+    a: "9",
+    d: ["8", "17", "0"],
+  },
+  { q: "Which number completes: 2, 6, 12, 20, 30, ?", a: "42", d: ["36", "40", "45"] },
+  { q: "Monday is to Wednesday as June is to:", a: "August", d: ["July", "May", "September"] },
+  {
+    q: "In a race you overtake the person in 2nd place. You are now:",
+    a: "2nd",
+    d: ["1st", "3rd", "Last"],
+  },
+  {
+    q: "Some cats are black. All black things absorb heat. Therefore:",
+    a: "Some cats absorb heat",
+    d: ["All cats are black", "No cats absorb heat", "All cats absorb heat"],
+  },
+  {
+    q: "Water freezes below 0°C. The lake is not frozen. So the lake is:",
+    a: "Possibly above 0°C",
+    d: ["Definitely below 0°C", "Definitely 0°C", "Boiling"],
+  },
+  { q: "If A > B and C < B, which is largest?", a: "A", d: ["B", "C", "Cannot tell"] },
+  {
+    q: "Tunde sits left of Musa. Musa sits left of Kemi. Who is in the middle?",
+    a: "Musa",
+    d: ["Tunde", "Kemi", "Nobody"],
+  },
+  { q: "How many months have 28 days?", a: "All 12", d: ["1", "2", "11"] },
+  {
+    q: "A cube has all faces painted, then cut into 27 small cubes. How many have exactly 3 painted faces?",
+    a: "8",
+    d: ["12", "6", "1"],
+  },
+  {
+    q: "If yesterday was Sunday, what is the day after tomorrow?",
+    a: "Wednesday",
+    d: ["Tuesday", "Thursday", "Monday"],
+  },
+  { q: "Doctor is to Hospital as Teacher is to:", a: "School", d: ["Book", "Student", "Chalk"] },
+  {
+    q: "Three friends share ₦900 in ratio 1:2:3. The largest share is:",
+    a: "₦450",
+    d: ["₦300", "₦150", "₦600"],
+  },
+  {
+    q: "Every Glorp is a Snorp. Kip is not a Snorp. So Kip is:",
+    a: "Not a Glorp",
+    d: ["A Glorp", "Maybe a Glorp", "A Snorp"],
+  },
+  { q: "What comes next: J, F, M, A, M, J, ?", a: "J", d: ["A", "S", "O"] },
+  {
+    q: "A rope ladder hangs off a boat, rungs 30cm apart, 3 rungs above water. Tide rises 60cm. Rungs above water?",
+    a: "3",
+    d: ["1", "2", "0"],
+  },
+  {
+    q: "If some Xs are Ys and all Ys are Zs, then some Xs are:",
+    a: "Zs",
+    d: ["Not Zs", "All Zs", "Neither"],
+  },
+];
+
+function genLogic(rng: Rng, level: number): Question {
+  const idx = randInt(rng, 0, LOGIC_BANK.length - 1);
+  const item = LOGIC_BANK[(idx + level) % LOGIC_BANK.length]!;
+  return choice(item.q, item.a, item.d, rng, { hint: "Choose the correct conclusion" });
+}
+
+const GENERATORS: Record<ModeId, (rng: Rng, level: number) => Question> = {
+  "number-sequence": genNumberSequence,
+  pattern: genPattern,
+  memory: genMemory,
+  "quick-math": genQuickMath,
+  "odd-one-out": genOddOneOut,
+  "word-scramble": genScramble,
+  logic: genLogic,
+};
+
+export function buildLevel(mode: ModeId, level: number): Question[] {
+  const out: Question[] = [];
+  for (let i = 0; i < QUESTIONS_PER_LEVEL; i++) {
+    const rng = makeRng(hashSeed(mode, level, i, "bb1"));
+    out.push(GENERATORS[mode](rng, level));
+  }
+  return out;
+}

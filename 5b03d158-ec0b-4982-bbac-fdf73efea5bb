@@ -1,0 +1,132 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
+import { toast } from "sonner";
+import { Download } from "lucide-react";
+import { sfx } from "@/game/audio";
+import { Switch } from "@/components/ui/switch";
+import { defaultState, getTimerMode, setState, useGameState } from "@/game/state";
+import { OfflineBadge, PageHeader, Shell } from "@/components/game/Chrome";
+import { TimerModeChips } from "@/components/game/TimerModePicker";
+
+export const Route = createFileRoute("/settings")({
+  head: () => ({
+    meta: [
+      { title: "Settings — Brain Battle: Think Fast!" },
+      {
+        name: "description",
+        content: "Control timers, sound, motion and reset your locally stored progress.",
+      },
+      { property: "og:title", content: "Settings — Brain Battle" },
+      {
+        property: "og:description",
+        content: "Tune gameplay options. Everything is stored on your device.",
+      },
+    ],
+  }),
+  component: SettingsPage,
+});
+
+const OPTIONS = [
+  { key: "sound", label: "Sound effects", desc: "Claps for correct, funny buzz for wrong" },
+  { key: "haptics", label: "Vibration", desc: "Short buzz on taps (supported devices)" },
+  { key: "reducedMotion", label: "Reduce motion", desc: "Calmer animations" },
+] as const;
+
+function SettingsPage() {
+  const { state } = useGameState();
+  const [confirming, setConfirming] = useState(false);
+
+  return (
+    <Shell>
+      <PageHeader
+        title="Settings"
+        subtitle="Everything is stored on this device"
+        right={<OfflineBadge />}
+      />
+
+      <section className="bb-card mb-4 p-4">
+        <p className="font-display text-sm font-bold">Timing mode</p>
+        <p className="mb-3 mt-1 text-xs text-muted-foreground">
+          Currently: {getTimerMode(state.timerMode).name}. Relax Mode never shows a countdown.
+        </p>
+        <TimerModeChips value={state.timerMode} />
+      </section>
+
+      <div className="grid gap-2">
+        {OPTIONS.map((o) => (
+          <div key={o.key} className="bb-card flex items-center gap-3 p-4">
+            <div className="min-w-0 flex-1">
+              <p className="font-display text-sm font-bold">{o.label}</p>
+              <p className="text-xs text-muted-foreground">{o.desc}</p>
+            </div>
+            <Switch
+              checked={state.settings[o.key]}
+              aria-label={o.label}
+              onCheckedChange={(v) =>
+                setState((s) => ({ ...s, settings: { ...s.settings, [o.key]: v } }))
+              }
+            />
+          </div>
+        ))}
+      </div>
+
+      <div className="bb-card mt-4 p-4">
+        <p className="font-display text-sm font-bold">About</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Brain Battle: Think Fast! runs fully offline. No account, no network, no device
+          permissions — your progress lives only in this device&apos;s local storage.
+        </p>
+      </div>
+
+      <div className="bb-card mt-4 p-4">
+        <p className="font-display text-sm font-bold">Download project source</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Full source code ZIP — all src and public files, package.json, config and everything
+          needed to build the app locally (run <code>npm i</code> then <code>npm run dev</code>).
+        </p>
+        <a
+          href="/brain-battle-source.zip"
+          download="brain-battle-think-fast-source.zip"
+          onClick={() => sfx.tap()}
+          className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary text-sm font-bold text-primary-foreground active:scale-[0.98]"
+        >
+          <Download className="h-4 w-4" /> Download Project Source
+        </a>
+      </div>
+
+      <div className="bb-card mt-4 p-4">
+        <p className="font-display text-sm font-bold text-destructive">Reset progress</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Deletes levels, stars, XP, coins and achievements. This cannot be undone.
+        </p>
+        {confirming ? (
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button
+              onClick={() => {
+                setState(() => defaultState());
+                setConfirming(false);
+                toast.success("Progress reset");
+              }}
+              className="min-h-11 rounded-xl bg-destructive text-sm font-semibold text-destructive-foreground"
+            >
+              Yes, erase it
+            </button>
+            <button
+              onClick={() => setConfirming(false)}
+              className="min-h-11 rounded-xl border border-border bg-surface-2 text-sm font-semibold"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setConfirming(true)}
+            className="mt-3 min-h-11 w-full rounded-xl border border-destructive/50 text-sm font-semibold text-destructive"
+          >
+            Reset all progress
+          </button>
+        )}
+      </div>
+    </Shell>
+  );
+}
