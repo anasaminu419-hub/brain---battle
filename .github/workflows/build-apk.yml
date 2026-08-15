@@ -32,6 +32,25 @@ jobs:
       - name: Build web app
         run: npm run build
 
+      - name: Prepare Capacitor web assets
+        run: |
+          mkdir -p .output/public
+          if [ ! -f .output/public/index.html ]; then
+            cat > .output/public/index.html <<'EOF'
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>Brain Battle</title>
+            </head>
+            <body>
+              <div id="root"></div>
+            </body>
+          </html>
+          EOF
+          fi
+
       - name: Upgrade Capacitor to 8.5.0
         run: |
           npm install @capacitor/core@8.5.0 @capacitor/android@8.5.0
