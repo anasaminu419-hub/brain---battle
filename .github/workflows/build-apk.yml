@@ -32,8 +32,10 @@ jobs:
       - name: Build web app
         run: npm run build
 
-      - name: Install Capacitor Android
-        run: npm install @capacitor/android
+      - name: Upgrade Capacitor to 8.5.0
+        run: |
+    npm install @capacitor/core@8.5.0 @capacitor/android@8.5.0
+    npm install
 
       - name: Add Android platform
         run: npx cap add android
